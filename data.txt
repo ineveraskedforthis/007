@@ -1,0 +1,124 @@
+object{
+	name{kind}
+	size{200}
+	storage_type{erasable}
+	property{
+		name{strength}
+		type{float}
+	}
+	property{
+		name{speed}
+		type{float}
+	}
+	property{
+		name{nutrition}
+		type{float}
+	}
+}
+
+object{
+	name{commodity}
+	size{200}
+	storage_type{erasable}
+}
+
+object{
+	name{activity}
+	size{256}
+	storage_type{erasable}
+}
+
+object{
+	name{ai_model}
+	size{200}
+	storage_type{erasable}
+
+	property{
+		name{stockpile_target}
+		type{array{commodity_id}{float}}
+	}
+}
+
+object{
+	name{character}
+	size{30000}
+	storage_type{erasable}
+	property{
+		name{x}
+		type{float}
+	}
+	property{
+		name{y}
+		type{float}
+	}
+	property{
+		name{hp}
+		type{int}
+	}
+	property{
+		name{weapon_quality}
+		type{float}
+	}
+	property{
+		name{hp_max}
+		type{int}
+	}
+	property{
+		name{inventory}
+		type{array{commodity_id}{float}}
+	}
+	property{
+		name{price_belief_buy}
+		type{array{commodity_id}{float}}
+	}
+	property{
+		name{price_belief_sell}
+		type{array{commodity_id}{float}}
+	}
+	property{
+		name{desire}
+		type{array{commodity_id}{float}}
+	}
+	property{
+		name{skills}
+		type{array{int32_t}{float}}
+	}
+	property{
+		name{action_timer}
+		type{float}
+	}
+	property{
+		name{action_type}
+		type{activity_id}
+	}
+        property{
+                name{ai_type}
+                type{ai_model_id}
+        }
+	property{
+		name{kind}
+		type{kind_id}
+	}
+}
+
+relationship{
+	name{delayed_transaction}
+        size{30000}
+	storage_type{ compactable }
+
+	link{
+		object{character}
+		name{members}
+		type{many}
+		index_storage{array}
+		multiple{2}
+	}
+	composite_key{
+		name{transaction_pair}
+		index{members}
+	}
+	property{
+		name{balance}
+		type{array{commodity_id}{float}}
+	}
+}
