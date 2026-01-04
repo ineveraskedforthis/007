@@ -48,10 +48,23 @@ void repair_weapon(game_state& game, dcon::character_id cid) {
 }
 
 void make_potion(game_state& game, dcon::character_id cid) {
+	auto material = game.data.character_get_inventory(cid, game.potion_material);
+	assert(material >= 1.f);
 	auto timer = game.data.character_get_action_timer(cid);
 	if (timer > 10) {
 		auto potion = game.data.character_get_inventory(cid, game.potion);
+		game.data.character_set_inventory(cid, game.potion_material, material - 1.f);
 		game.data.character_set_inventory(cid, game.potion, potion + 1.f);
+		game.data.character_set_action_timer(cid, 0);
+		game.data.character_set_action_type(cid, {});
+	}
+}
+
+void gather_potion_material(game_state& game, dcon::character_id cid) {
+	auto timer = game.data.character_get_action_timer(cid);
+	if (timer > 3) {
+		auto count = game.data.character_get_inventory(cid, game.potion_material);
+		game.data.character_set_inventory(cid, game.potion_material, count + 1.f);
 		game.data.character_set_action_timer(cid, 0);
 		game.data.character_set_action_type(cid, {});
 	}
@@ -138,12 +151,17 @@ int main(int argc, char const* argv[]) {
 		game.data.ai_model_set_stockpile_target(shopkeeper_model, commodity, 10);
 	});
 
+
 	auto alchemist_model = game.data.create_ai_model();
 	game.data.ai_model_set_stockpile_target(alchemist_model, game.food, 5);
+	game.data.ai_model_set_stockpile_target(alchemist_model, game.potion_material, 10);
 
 
 	auto weapon_master_model = game.data.create_ai_model();
 	game.data.ai_model_set_stockpile_target(weapon_master_model, game.food, 5);
+
+	auto herbalist_model = game.data.create_ai_model();
+	game.data.ai_model_set_stockpile_target(herbalist_model, game.food, 5);
 
 
 	{
@@ -179,10 +197,22 @@ int main(int argc, char const* argv[]) {
 	game.data.character_set_inventory(shop_owner, game.coins, 100);
 	game.data.character_set_ai_type(shop_owner, shopkeeper_model);
 
+	{
+		auto alchemist = game.data.create_character();
+		game.data.character_set_inventory(alchemist, game.coins, 10);
+		game.data.character_set_ai_type(alchemist, alchemist_model);
+	}
 
-	auto alchemist = game.data.create_character();
-	game.data.character_set_inventory(alchemist, game.coins, 10);
-	game.data.character_set_ai_type(alchemist, alchemist_model);
+	{
+		auto alchemist = game.data.create_character();
+		game.data.character_set_inventory(alchemist, game.coins, 10);
+		game.data.character_set_ai_type(alchemist, alchemist_model);
+	}
+
+	{
+		auto herbalist = game.data.create_character();
+		game.data.character_set_ai_type(herbalist, herbalist_model);
+	}
 
 	auto weapon_master = game.data.create_character();
 	game.data.character_set_inventory(weapon_master, game.coins, 10);
@@ -206,12 +236,12 @@ int main(int argc, char const* argv[]) {
 				auto coins = game.data.character_get_inventory(cid, game.coins);
 				if (
 					game.data.character_get_weapon_quality(cid) < 1.5f
-					&& weapon_repair_price * 10.f < coins
+					&& weapon_repair_price * 3.f < coins
 					&& !game.data.character_get_action_type(cid)
 				) {
 					game.data.character_set_action_type(cid, game.weapon_repair);
 					transaction(game, cid, weapon_master, game.coins, weapon_repair_price);
-					game.data.character_set_price_belief_sell(weapon_master, game.weapon_service, weapon_repair_price * 1.5f);
+					game.data.character_set_price_belief_sell(weapon_master, game.weapon_service, weapon_repair_price * 1.05f);
 					printf("I will repair weapons");
 				}
 
@@ -221,7 +251,11 @@ int main(int argc, char const* argv[]) {
 					hunt(game, cid);
 				}
 			} else if (model == alchemist_model) {
-				make_potion(game, cid);
+				if (game.data.character_get_inventory(cid, game.potion_material) > 1.f) {
+					make_potion(game, cid);
+				}
+			} else if (model == herbalist_model) {
+				gather_potion_material(game, cid);
 			}
 			auto timer = game.data.character_get_action_timer(cid);
 			game.data.character_set_action_timer(cid, timer + 1);
@@ -280,7 +314,6 @@ int main(int argc, char const* argv[]) {
 									already_indebted = true;
 								}
 							}
-
 							if (!already_indebted) {
 								delayed_transaction(game, shop_owner, cid, commodity, 1.f);
 								transaction(game, cid, shop_owner, game.coins, price_shop_sell);
@@ -298,7 +331,7 @@ int main(int argc, char const* argv[]) {
 							transaction(game, cid, shop_owner, commodity, 1.f);
 							transaction(game, shop_owner, cid, game.coins, price_shop_buy);
 						} else if (price_shop_buy >= desired_price_sell && inventory >= 1.f) {
-							printf("I am selling for promises\n");
+							printf("I am selling for promise of future payment\n");
 							transaction(game, cid, shop_owner, commodity, 1.f);
 							delayed_transaction(game, shop_owner, cid, game.coins, price_shop_buy);
 						}
