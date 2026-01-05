@@ -29,3 +29,4 @@ output
 *.pdb
 *.exe
 build*
+statistics/market_activity.txt

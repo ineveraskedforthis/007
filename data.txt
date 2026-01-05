@@ -19,6 +19,12 @@ object{
 }
 
 object{
+	name{skill}
+	size{200}
+	storage_type{erasable}
+}
+
+object{
 	name{commodity}
 	size{200}
 	storage_type{erasable}
@@ -111,7 +117,7 @@ object{
 	}
 	property{
 		name{skills}
-		type{array{int32_t}{float}}
+		type{array{skill_id}{float}}
 	}
 	property{
 		name{action_timer}

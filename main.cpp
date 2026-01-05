@@ -9,6 +9,10 @@ inline constexpr uint32_t morning = 0;
 inline constexpr uint32_t evening = 1000;
 inline constexpr uint32_t day_lenght = 1250;
 
+struct skill_ids {
+	dcon::skill_id cooking;
+};
+
 struct game_state {
 	dcon::data_container data;
 	uint32_t time;
@@ -26,6 +30,8 @@ struct game_state {
 	dcon::building_model_id inn;
 	dcon::building_model_id shop;
 	dcon::building_model_id shop_weapon;
+
+	skill_ids skills;
 };
 
 void hunt(game_state& game, dcon::character_id cid) {
@@ -72,8 +78,10 @@ void prepare_food(game_state& game, dcon::character_id cid) {
 	auto timer = game.data.character_get_action_timer(cid);
 	if (timer > 1) {
 		auto result = game.data.character_get_inventory(cid, game.prepared_food);
+		// auto skill = game.data.character_get_skills(cid, )
+		auto skill_bonus = (float)(int)(game.data.character_get_skills(cid, game.skills.cooking) / 0.1);
 		game.data.character_set_inventory(cid, game.raw_food, material - 1.f);
-		game.data.character_set_inventory(cid, game.prepared_food, result + 1.f);
+		game.data.character_set_inventory(cid, game.prepared_food, result + 1.f + skill_bonus);
 		game.data.character_set_action_timer(cid, 0);
 		game.data.character_set_action_type(cid, {});
 	}
@@ -94,7 +102,7 @@ void eat(game_state& game, dcon::character_id cid) {
 	auto hunger = game.data.character_get_desire(cid, game.prepared_food);
 	if (food >= 1.f) {
 		game.data.character_set_inventory(cid, game.prepared_food, food - 1);
-		game.data.character_set_desire(cid, game.prepared_food, hunger - 10);
+		game.data.character_set_desire(cid, game.prepared_food, hunger - 50);
 
 		auto hp = game.data.character_get_hp(cid);
 		game.data.character_set_hp(cid, hp + 5);
@@ -112,6 +120,8 @@ void drink_potion(game_state& game, dcon::character_id cid) {
 	}
 }
 
+static int market_activity = 0;
+
 void transaction(game_state& game, dcon::character_id A, dcon::character_id B, dcon::commodity_id C, float amount) {
 	assert(amount >= 0.f);
 	auto i_A = game.data.character_get_inventory(A, C);
@@ -120,6 +130,8 @@ void transaction(game_state& game, dcon::character_id A, dcon::character_id B, d
 	assert(i_A >= amount);
 	game.data.character_set_inventory(A, C, i_A - amount);
 	game.data.character_set_inventory(B, C, i_B + amount);
+
+	market_activity += 1;
 }
 
 void delayed_transaction(game_state& game, dcon::character_id A, dcon::character_id B, dcon::commodity_id C, float amount) {
@@ -164,6 +176,8 @@ int main(int argc, char const* argv[]) {
 	game.prepared_food = game.data.create_commodity();
 	game.weapon_service = game.data.create_commodity();
 
+	game.skills.cooking = game.data.create_skill();
+
 	game.inn = game.data.create_building_model();
 	game.shop = game.data.create_building_model();
 	game.shop_weapon = game.data.create_building_model();
@@ -185,9 +199,8 @@ int main(int argc, char const* argv[]) {
 	});
 
 	auto innkeeper_model = game.data.create_ai_model();
-	game.data.ai_model_set_stockpile_target(innkeeper_model, game.potion, 7);
 	game.data.ai_model_set_stockpile_target(innkeeper_model, game.raw_food, 10);
-
+	game.data.ai_model_set_stockpile_target(innkeeper_model, game.prepared_food, 5);
 
 
 	auto alchemist_model = game.data.create_ai_model();
@@ -197,6 +210,7 @@ int main(int argc, char const* argv[]) {
 
 	auto weapon_master_model = game.data.create_ai_model();
 	game.data.ai_model_set_stockpile_target(weapon_master_model, game.prepared_food, 5);
+
 
 	auto herbalist_model = game.data.create_ai_model();
 	game.data.ai_model_set_stockpile_target(herbalist_model, game.prepared_food, 5);
@@ -240,6 +254,7 @@ int main(int argc, char const* argv[]) {
 		auto innkeeper = game.data.create_character();
 		game.data.character_set_inventory(innkeeper, game.coins, 10);
 		game.data.character_set_ai_type(innkeeper, innkeeper_model);
+		game.data.character_set_skills(innkeeper, game.skills.cooking, 0.3f);
 
 		game.data.force_create_ownership(innkeeper, inn);
 	}
@@ -268,13 +283,13 @@ int main(int argc, char const* argv[]) {
 
 	{
 		auto alchemist = game.data.create_character();
-		game.data.character_set_inventory(alchemist, game.coins, 10);
+		game.data.character_set_inventory(alchemist, game.coins, 100);
 		game.data.character_set_ai_type(alchemist, alchemist_model);
 	}
 
 	{
 		auto alchemist = game.data.create_character();
-		game.data.character_set_inventory(alchemist, game.coins, 10);
+		game.data.character_set_inventory(alchemist, game.coins, 100);
 		game.data.character_set_ai_type(alchemist, alchemist_model);
 	}
 
@@ -305,10 +320,20 @@ int main(int argc, char const* argv[]) {
 	});
 
 
-
 	game.weapon_repair = game.data.create_activity();
 
-	for (int tick = 0; tick < 1000; tick++) {
+	FILE* file_handle;
+	file_handle = fopen("statistics/market_activity.txt", "w");
+
+	fprintf(file_handle, "activity,debt\n");
+	for (int tick = 0; tick < 10000; tick++) {
+		auto total_debt = 0.f;
+		game.data.for_each_delayed_transaction([&](auto transaction) {
+			total_debt += std::abs(game.data.delayed_transaction_get_balance(transaction, game.coins));
+		});
+		fprintf(file_handle, "%d,%f\n", market_activity, total_debt);
+		// market_activity = 0;
+
 		game.data.for_each_character([&](auto cid) {
 			auto model = game.data.character_get_ai_type(cid);
 			if (model == hunter_model) {
@@ -328,19 +353,30 @@ int main(int argc, char const* argv[]) {
 					printf("I will repair weapons\n");
 				}
 
-				if (game.data.character_get_action_type(cid) == game.weapon_repair) {
+				if (
+					game.data.character_get_desire(cid, game.prepared_food) > 200
+					&& game.data.character_get_inventory(cid, game.raw_food) >= 1.f
+				) {
+					prepare_food(game, cid);
+				} else if (game.data.character_get_action_type(cid) == game.weapon_repair) {
 					repair_weapon(game, cid);
 				} else {
 					hunt(game, cid);
 				}
 			} else if (model == alchemist_model) {
-				if (game.data.character_get_inventory(cid, game.potion_material) > 1.f) {
+				auto potion_price = game.data.character_get_price_belief_sell(cid, game.potion);
+				auto potion_material_cost = game.data.character_get_price_belief_buy(cid, game.potion_material);
+				if (
+					game.data.character_get_inventory(cid, game.potion_material) >= 1.f
+					&& potion_price > potion_material_cost * 2.f
+				) {
 					make_potion(game, cid);
 				}
 			} else if (model == herbalist_model) {
 				gather_potion_material(game, cid);
 			} else if (model == innkeeper_model) {
-				if (game.data.character_get_inventory(cid, game.raw_food) > 1.f) {
+				if (game.data.character_get_inventory(cid, game.raw_food) >= 1.f) {
+					printf("make food\n");
 					prepare_food(game, cid);
 				}
 			}
@@ -456,7 +492,7 @@ int main(int argc, char const* argv[]) {
 		});
 
 		game.data.for_each_character([&](auto cid) {
-			if (game.data.character_get_desire(cid, game.prepared_food) > 10.f) {
+			if (game.data.character_get_desire(cid, game.prepared_food) > 50.f) {
 				eat(game, cid);
 			}
 			drink_potion(game, cid);
