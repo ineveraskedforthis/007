@@ -1,3 +1,5 @@
+global{no-conversions}
+
 object{
 	name{kind}
 	size{200}
@@ -36,6 +38,30 @@ object{
 	property{
 		name{stockpile_target}
 		type{array{commodity_id}{float}}
+	}
+}
+
+object{
+	name{building_model}
+	size{200}
+	storage_type{erasable}
+}
+
+object{
+	name{building}
+	size{30000}
+	storage_type{erasable}
+	property{
+		name{tile_x}
+		type{int32_t}
+	}
+	property{
+		name{tile_y}
+		type{int32_t}
+	}
+	property{
+		name{building_model}
+		type{building_model_id}
 	}
 }
 
@@ -80,6 +106,10 @@ object{
 		type{array{commodity_id}{float}}
 	}
 	property{
+		name{mood}
+		type{float}
+	}
+	property{
 		name{skills}
 		type{array{int32_t}{float}}
 	}
@@ -98,6 +128,37 @@ object{
 	property{
 		name{kind}
 		type{kind_id}
+	}
+
+	property{
+		name{favourite_shop}
+		type{character_id}
+	}
+	property{
+		name{favourite_inn}
+		type{character_id}
+	}
+	property{
+		name{favourite_shop_weapons}
+		type{character_id}
+	}
+}
+
+relationship{
+	name{ownership}
+        size{30000}
+	storage_type{erasable}
+
+	link{
+		object{character}
+		name{owner}
+		type{many}
+	}
+
+	link{
+		object{building}
+		name{building}
+		type{unique}
 	}
 }
 
