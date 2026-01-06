@@ -78,7 +78,7 @@ void delayed_transaction(game_state& game, dcon::character_id A, dcon::character
 
 void hunt(game_state& game, dcon::character_id cid) {
 	auto timer = game.data.character_get_action_timer(cid);
-	if (timer > 8) {
+	if (timer > 15) {
 		auto weapon = game.data.character_get_weapon_quality(cid);
 		auto bonus = int(weapon / 0.2);
 		auto food = game.data.character_get_inventory(cid, game.raw_food);
@@ -97,12 +97,12 @@ void repair_weapon(game_state& game, dcon::character_id cid, dcon::character_id 
 	auto timer = game.data.character_get_action_timer(cid);
 	auto weapon_repair_price = game.data.character_get_price_belief_sell(master, game.weapon_service);
 	if (timer == 0) {
-		printf("start repair");
+		printf("start repair\n");
 		game.data.character_set_action_timer(cid, timer + 1);
 		transaction(game, cid, master, game.coins, weapon_repair_price);
 		game.data.character_set_price_belief_sell(master, game.weapon_service, weapon_repair_price * 1.05f);
 	} else if (timer > 4) {
-		printf("complete repair");
+		printf("complete repair\n");
 		auto quality = game.data.character_get_weapon_quality(cid);
 		game.data.character_set_weapon_quality(cid, quality + 0.3f);
 		game.data.character_set_action_timer(cid, 0.f);
@@ -462,13 +462,21 @@ int main(int argc, char const* argv[]) {
 	FILE* file_handle;
 	file_handle = fopen("statistics/market_activity.txt", "w");
 
-	fprintf(file_handle, "activity,debt\n");
-	for (int tick = 0; tick < 60; tick++) {
+	fprintf(file_handle, "activity,debt,price_food,price_potion\n");
+	for (int tick = 0; tick < 10000; tick++) {
 		auto total_debt = 0.f;
 		game.data.for_each_delayed_transaction([&](auto transaction) {
 			total_debt += std::abs(game.data.delayed_transaction_get_balance(transaction, game.coins));
 		});
-		fprintf(file_handle, "%d,%f\n", market_activity, total_debt);
+		auto count = 0.f;
+		auto total_price_food = 0.f;
+		auto total_price_potion = 0.f;
+		game.data.for_each_character([&](auto cid) {
+			total_price_food += std::abs(game.data.character_get_price_belief_buy(cid, game.prepared_food));
+			total_price_potion += std::abs(game.data.character_get_price_belief_buy(cid, game.potion));
+			count += 1.f;
+		});
+		fprintf(file_handle, "%d,%f,%f,%f\n", market_activity, total_debt, total_price_food / count, total_price_potion / count);
 		// market_activity = 0;
 
 		// AI update
@@ -519,6 +527,9 @@ int main(int argc, char const* argv[]) {
 					if (commodity == game.coins) {
 						return;
 					}
+					if (commodity == game.weapon_service) {
+						return;
+					}
 
 					auto shop = game.data.character_get_favourite_shop(cid);
 					if (commodity == game.prepared_food) {
@@ -543,7 +554,7 @@ int main(int argc, char const* argv[]) {
 
 
 					if (target > inventory) {
-						printf("I need this? %d %f %f %f\n", commodity.index(), desired_price_buy, price_shop_sell, in_stock );
+						// printf("I need this? %d %f %f %f\n", commodity.index(), desired_price_buy, price_shop_sell, in_stock );
 						if (desired_price_buy >= price_shop_sell && in_stock >= 1.f && coins >= price_shop_sell) {
 							printf("I am buying\n");
 							transaction(game, shop_owner, cid, commodity, 1.f);
@@ -574,7 +585,7 @@ int main(int argc, char const* argv[]) {
 					}
 
 					if (target < inventory) {
-						printf("I do not need this? %d %f %f %f\n", commodity.index(), desired_price_sell, price_shop_buy, in_stock );
+						// printf("I do not need this? %d %f %f %f\n", commodity.index(), desired_price_sell, price_shop_buy, in_stock );
 
 						if (price_shop_buy >= desired_price_sell && inventory >= 1.f && coins_shop >= price_shop_buy) {
 							printf("I am selling\n");
@@ -639,7 +650,7 @@ int main(int argc, char const* argv[]) {
 			game.data.for_each_character([&](auto cid) {
 				if (game.data.character_get_ai_type(cid) == weapon_master_model) {
 					auto cost = game.data.character_get_price_belief_sell(cid, game.weapon_service);
-					game.data.character_set_price_belief_sell(cid, game.weapon_service, cost * 0.9f);
+					game.data.character_set_price_belief_sell(cid, game.weapon_service, cost * 0.99f);
 				}
 				game.data.for_each_commodity([&](auto commodity) {
 					if (commodity == game.coins) {
@@ -656,8 +667,8 @@ int main(int argc, char const* argv[]) {
 					auto spoilage = (float)(int)(inventory / 20);
 
 					if (inventory > target * 2) {
-						auto price_decay_sell = exp(-inventory / target * 0.5f);
-						auto price_decay_buy =exp(-inventory / target);
+						auto price_decay_sell = exp(-inventory / target * 0.05f);
+						auto price_decay_buy =exp(-inventory / target * 0.1f);
 
 						auto price_shop_sell = game.data.character_get_price_belief_sell(cid, commodity);
 						game.data.character_set_price_belief_sell(cid, commodity, std::max(0.00001f,  price_shop_sell * price_decay_sell));
@@ -668,8 +679,8 @@ int main(int argc, char const* argv[]) {
 
 					// if something is spoiling, we want to get rid of it
 					if (spoilage > 0) {
-						auto price_decay_sell = exp(-spoilage * 0.5f);
-						auto price_decay_buy =exp(-spoilage);
+						auto price_decay_sell = exp(-spoilage * 0.05f);
+						auto price_decay_buy =exp(-spoilage * 0.1f);
 						// spoilage
 						game.data.character_set_inventory(cid, commodity, inventory - (float)(int)(inventory / 20));
 
@@ -684,7 +695,7 @@ int main(int argc, char const* argv[]) {
 
 					if (inventory < target) {
 						auto lack = (float)(target - inventory) / (float)target;
-						auto mult_buy = exp(lack / 10.f);
+						auto mult_buy = exp(lack  * 0.05f);
 
 						auto price_shop_buy = game.data.character_get_price_belief_buy(cid, commodity);
 						game.data.character_set_price_belief_buy(cid, commodity, std::min(coins + 10.f,  price_shop_buy * mult_buy));
@@ -699,6 +710,7 @@ int main(int argc, char const* argv[]) {
 				});
 			});
 		}
+
 
 		game.data.for_each_character([&](auto cid) {
 			dcon::character_fat_id fcid = dcon::fatten(game.data, cid);
@@ -721,6 +733,7 @@ int main(int argc, char const* argv[]) {
 			printf("%f %f %f\n", fcid.get_inventory(game.raw_food), fcid.get_price_belief_buy(game.raw_food), fcid.get_price_belief_sell(game.raw_food));
 		});
 
+		/*
 		printf("POTIONS:\n");
 		game.data.for_each_character([&](auto cid) {
 			dcon::character_fat_id fcid = dcon::fatten(game.data, cid);
@@ -732,6 +745,7 @@ int main(int argc, char const* argv[]) {
 			dcon::character_fat_id fcid = dcon::fatten(game.data, cid);
 			printf("%f %f %f\n", fcid.get_inventory(game.potion_material), fcid.get_price_belief_buy(game.potion_material), fcid.get_price_belief_sell(game.potion_material));
 		});
+		*/
 
 		printf("WEAPON:\n");
 		game.data.for_each_character([&](auto cid) {
