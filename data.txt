@@ -108,8 +108,8 @@ object{
 		type{array{commodity_id}{float}}
 	}
 	property{
-		name{desire}
-		type{array{commodity_id}{float}}
+		name{hunger}
+		type{float}
 	}
 	property{
 		name{mood}
@@ -138,15 +138,46 @@ object{
 
 	property{
 		name{favourite_shop}
-		type{character_id}
+		type{building_id}
 	}
 	property{
 		name{favourite_inn}
-		type{character_id}
+		type{building_id}
 	}
 	property{
 		name{favourite_shop_weapons}
+		type{building_id}
+	}
+
+	property{
+		name{delivers_for_first}
 		type{character_id}
+	}
+	property{
+		name{delivers_for_second}
+		type{character_id}
+	}
+	property{
+		name{delivers_for_third}
+		type{character_id}
+	}
+}
+
+relationship{
+	name{guest}
+	size{3000}
+	storage_type{erasable}
+
+	link{
+		object{character}
+		name{guest}
+		type{unique}
+	}
+
+	link{
+		object{building}
+		name{guest_location}
+		type{many}
 	}
 }
 

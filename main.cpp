@@ -13,6 +13,18 @@ struct skill_ids {
 	dcon::skill_id cooking;
 };
 
+struct ai_state {
+	dcon::activity_id weapon_repair;
+	dcon::activity_id shopping;
+	dcon::activity_id getting_food;
+	dcon::activity_id prepare_food;
+	dcon::activity_id working;
+};
+
+struct ai_personality {
+	dcon::ai_model_id hunter;
+};
+
 struct game_state {
 	dcon::data_container data;
 	uint32_t time;
@@ -25,100 +37,15 @@ struct game_state {
 	dcon::commodity_id prepared_food;
 	dcon::commodity_id weapon_service;
 
-	dcon::activity_id weapon_repair;
 
 	dcon::building_model_id inn;
 	dcon::building_model_id shop;
 	dcon::building_model_id shop_weapon;
 
 	skill_ids skills;
+	ai_state ai;
+	ai_personality personality;
 };
-
-void hunt(game_state& game, dcon::character_id cid) {
-	auto timer = game.data.character_get_action_timer(cid);
-	if (timer > 4) {
-		auto weapon = game.data.character_get_weapon_quality(cid);
-		auto bonus = int(weapon / 0.2);
-		auto food = game.data.character_get_inventory(cid, game.raw_food);
-		game.data.character_set_inventory(cid, game.raw_food, food + 1.f + (float)bonus);
-		game.data.character_set_action_timer(cid, 0);
-		game.data.character_set_action_type(cid, {});
-	}
-	game.data.character_set_hp(cid, game.data.character_get_hp(cid) - 1);
-	auto quality = game.data.character_get_weapon_quality(cid);
-	game.data.character_set_weapon_quality(cid, quality * 0.99f);
-}
-
-void repair_weapon(game_state& game, dcon::character_id cid) {
-	auto timer = game.data.character_get_action_timer(cid);
-	if (timer > 4) {
-		auto quality = game.data.character_get_weapon_quality(cid);
-		game.data.character_set_weapon_quality(cid, quality + 0.1f);
-		game.data.character_set_action_timer(cid, 0.f);
-		game.data.character_set_action_type(cid, {});
-	}
-}
-
-void make_potion(game_state& game, dcon::character_id cid) {
-	auto material = game.data.character_get_inventory(cid, game.potion_material);
-	assert(material >= 1.f);
-	auto timer = game.data.character_get_action_timer(cid);
-	if (timer > 10) {
-		auto potion = game.data.character_get_inventory(cid, game.potion);
-		game.data.character_set_inventory(cid, game.potion_material, material - 1.f);
-		game.data.character_set_inventory(cid, game.potion, potion + 1.f);
-		game.data.character_set_action_timer(cid, 0);
-		game.data.character_set_action_type(cid, {});
-	}
-}
-
-void prepare_food(game_state& game, dcon::character_id cid) {
-	auto material = game.data.character_get_inventory(cid, game.raw_food);
-	assert(material >= 1.f);
-	auto timer = game.data.character_get_action_timer(cid);
-	if (timer > 1) {
-		auto result = game.data.character_get_inventory(cid, game.prepared_food);
-		// auto skill = game.data.character_get_skills(cid, )
-		auto skill_bonus = (float)(int)(game.data.character_get_skills(cid, game.skills.cooking) / 0.1);
-		game.data.character_set_inventory(cid, game.raw_food, material - 1.f);
-		game.data.character_set_inventory(cid, game.prepared_food, result + 1.f + skill_bonus);
-		game.data.character_set_action_timer(cid, 0);
-		game.data.character_set_action_type(cid, {});
-	}
-}
-
-void gather_potion_material(game_state& game, dcon::character_id cid) {
-	auto timer = game.data.character_get_action_timer(cid);
-	if (timer > 3) {
-		auto count = game.data.character_get_inventory(cid, game.potion_material);
-		game.data.character_set_inventory(cid, game.potion_material, count + 1.f);
-		game.data.character_set_action_timer(cid, 0);
-		game.data.character_set_action_type(cid, {});
-	}
-}
-
-void eat(game_state& game, dcon::character_id cid) {
-	auto food = game.data.character_get_inventory(cid, game.prepared_food);
-	auto hunger = game.data.character_get_desire(cid, game.prepared_food);
-	if (food >= 1.f) {
-		game.data.character_set_inventory(cid, game.prepared_food, food - 1);
-		game.data.character_set_desire(cid, game.prepared_food, hunger - 50);
-
-		auto hp = game.data.character_get_hp(cid);
-		game.data.character_set_hp(cid, hp + 5);
-	}
-}
-
-void drink_potion(game_state& game, dcon::character_id cid) {
-	auto potions = game.data.character_get_inventory(cid, game.potion);
-	auto hp = game.data.character_get_hp(cid);
-	auto hp_max = game.data.character_get_hp_max(cid);
-
-	if (hp * 2 < hp_max && potions >= 1.f) {
-		game.data.character_set_inventory(cid, game.potion, potions - 1);
-		game.data.character_set_hp(cid, hp + 20);
-	}
-}
 
 static int market_activity = 0;
 
@@ -149,9 +76,217 @@ void delayed_transaction(game_state& game, dcon::character_id A, dcon::character
 	}
 }
 
+void hunt(game_state& game, dcon::character_id cid) {
+	auto timer = game.data.character_get_action_timer(cid);
+	if (timer > 4) {
+		auto weapon = game.data.character_get_weapon_quality(cid);
+		auto bonus = int(weapon / 0.2);
+		auto food = game.data.character_get_inventory(cid, game.raw_food);
+		game.data.character_set_inventory(cid, game.raw_food, food + 1.f + (float)bonus);
+		game.data.character_set_action_timer(cid, 0);
+		game.data.character_set_action_type(cid, {});
+	} else {
+		game.data.character_set_action_timer(cid, timer + 1);
+	}
+	game.data.character_set_hp(cid, game.data.character_get_hp(cid) - 1);
+	auto quality = game.data.character_get_weapon_quality(cid);
+	game.data.character_set_weapon_quality(cid, quality * 0.99f);
+}
+
+void repair_weapon(game_state& game, dcon::character_id cid, dcon::character_id master) {
+	auto timer = game.data.character_get_action_timer(cid);
+	auto weapon_repair_price = game.data.character_get_price_belief_sell(master, game.weapon_service);
+	if (timer == 0) {
+		game.data.character_set_action_timer(cid, timer + 1);
+		transaction(game, cid, master, game.coins, weapon_repair_price);
+		game.data.character_set_price_belief_sell(master, game.weapon_service, weapon_repair_price * 1.05f);
+	} else if (timer > 4) {
+		auto quality = game.data.character_get_weapon_quality(cid);
+		game.data.character_set_weapon_quality(cid, quality + 0.1f);
+		game.data.character_set_action_timer(cid, 0.f);
+		game.data.character_set_action_type(cid, {});
+		game.data.delete_guest(game.data.character_get_guest(cid));
+	} else {
+		game.data.character_set_action_timer(cid, timer + 1);
+	}
+}
+
+void make_potion(game_state& game, dcon::character_id cid) {
+	auto material = game.data.character_get_inventory(cid, game.potion_material);
+	assert(material >= 1.f);
+	auto timer = game.data.character_get_action_timer(cid);
+	if (timer > 10) {
+		auto potion = game.data.character_get_inventory(cid, game.potion);
+		game.data.character_set_inventory(cid, game.potion_material, material - 1.f);
+		game.data.character_set_inventory(cid, game.potion, potion + 1.f);
+		game.data.character_set_action_timer(cid, 0);
+		game.data.character_set_action_type(cid, {});
+	} else {
+		game.data.character_set_action_timer(cid, timer + 1);
+	}
+}
+
+void prepare_food(game_state& game, dcon::character_id cid) {
+	auto material = game.data.character_get_inventory(cid, game.raw_food);
+	assert(material >= 1.f);
+	auto timer = game.data.character_get_action_timer(cid);
+	if (timer > 1) {
+		auto result = game.data.character_get_inventory(cid, game.prepared_food);
+		// auto skill = game.data.character_get_skills(cid, )
+		auto skill_bonus = (float)(int)(game.data.character_get_skills(cid, game.skills.cooking) / 0.1);
+		game.data.character_set_inventory(cid, game.raw_food, material - 1.f);
+		game.data.character_set_inventory(cid, game.prepared_food, result + 1.f + skill_bonus);
+		game.data.character_set_action_timer(cid, 0);
+		game.data.character_set_action_type(cid, {});
+	} else {
+		game.data.character_set_action_timer(cid, timer + 1);
+	}
+}
+
+void gather_potion_material(game_state& game, dcon::character_id cid) {
+	auto timer = game.data.character_get_action_timer(cid);
+	if (timer > 3) {
+		auto count = game.data.character_get_inventory(cid, game.potion_material);
+		game.data.character_set_inventory(cid, game.potion_material, count + 1.f);
+		game.data.character_set_action_timer(cid, 0);
+		game.data.character_set_action_type(cid, {});
+	} else {
+		game.data.character_set_action_timer(cid, timer + 1);
+	}
+}
+
+void eat(game_state& game, dcon::character_id cid) {
+	auto food = game.data.character_get_inventory(cid, game.prepared_food);
+	auto hunger = game.data.character_get_hunger(cid);
+	if (food >= 1.f) {
+		game.data.character_set_inventory(cid, game.prepared_food, food - 1);
+		game.data.character_set_hunger(cid, hunger - 50);
+
+		auto hp = game.data.character_get_hp(cid);
+		game.data.character_set_hp(cid, hp + 5);
+	}
+}
+
+void drink_potion(game_state& game, dcon::character_id cid) {
+	auto potions = game.data.character_get_inventory(cid, game.potion);
+	auto hp = game.data.character_get_hp(cid);
+	auto hp_max = game.data.character_get_hp_max(cid);
+
+	if (hp * 2 < hp_max && potions >= 1.f) {
+		game.data.character_set_inventory(cid, game.potion, potions - 1);
+		game.data.character_set_hp(cid, hp + 20);
+	}
+}
+
+
+
 enum class skill {
 	travel, archery, swordsmanship, gathering, alchemy, trade
 };
+
+namespace ai {
+
+namespace triggers {
+
+
+bool desire_weapon_repair(game_state& game, dcon::character_id cid, dcon::character_id master) {
+	if (game.data.character_get_weapon_quality(cid) > 2.f) {
+		return false;
+	}
+
+	auto coins = game.data.character_get_inventory(cid, game.coins);
+	auto weapon_repair_price = game.data.character_get_price_belief_sell(master, game.weapon_service);
+	if (weapon_repair_price * 3.f > coins) {
+		return false;
+	}
+
+	return true;
+}
+
+
+}
+
+
+namespace update_activity {
+
+void hunter(game_state& game, dcon::character_id cid) {
+	auto x = game.data.character_get_x(cid);
+	auto y = game.data.character_get_y(cid);
+	auto coins = game.data.character_get_inventory(cid, game.coins);
+	auto action = game.data.character_get_action_type(cid);
+	auto ai_type = game.data.character_get_ai_type(cid);
+
+	assert(ai_type == game.personality.hunter);
+
+	auto favourite_weapons_shop = game.data.character_get_favourite_shop_weapons(cid);
+	auto favourite_weapons_shop_owner = game.data.building_get_owner_from_ownership(favourite_weapons_shop);
+	auto weapon_repair_price = game.data.character_get_price_belief_sell(favourite_weapons_shop_owner, game.weapon_service);
+
+	if (!action) {
+		auto loot  = game.data.character_get_inventory(cid, game.raw_food);
+		auto loot_target = game.data.ai_model_get_stockpile_target(ai_type, game.raw_food);
+
+		if (loot_target > 3) {
+			game.data.character_set_action_type(cid, game.ai.shopping);
+		} else if (
+			ai::triggers::desire_weapon_repair(game, cid, favourite_weapons_shop_owner)
+		) {
+			game.data.character_set_action_type(cid, game.ai.weapon_repair);
+		} else if (
+			game.data.character_get_hunger(cid) > 200
+			&& game.data.character_get_inventory(cid, game.raw_food) >= 1.f
+		) {
+			game.data.character_set_action_type(cid, game.ai.prepare_food);
+		} else {
+			game.data.character_set_action_type(cid, game.ai.working);
+		}
+	}
+
+	auto guest_in = game.data.character_get_guest_location_from_guest(cid);
+
+	if (action == game.ai.weapon_repair) {
+		if (
+			ai::triggers::desire_weapon_repair(game, cid, favourite_weapons_shop_owner)
+		) {
+			auto target_x = game.data.building_get_tile_x(favourite_weapons_shop);
+			auto target_y = game.data.building_get_tile_y(favourite_weapons_shop);
+
+			auto dx = (float) target_x - x;
+			auto dy = (float) target_y - y;
+			auto distance = abs(dx) + abs(dy);
+
+			if (guest_in == favourite_weapons_shop) {
+				repair_weapon(game, cid, favourite_weapons_shop_owner);
+			} else if (guest_in) {
+				game.data.delete_guest(game.data.character_get_guest(cid));
+			} else if (distance < 2){
+				game.data.force_create_guest(cid, favourite_weapons_shop);
+			} else {
+				if (dx != 0) {
+					game.data.character_set_x(cid, x + dx / abs(dx));
+				}
+				if (dy != 0) {
+					game.data.character_set_y(cid, y + dy / abs(dy));
+				}
+			}
+		} else {
+			game.data.character_set_action_timer(cid, 0);
+			game.data.character_set_action_type(cid, {});
+		}
+		return;
+	} else if (action == game.ai.prepare_food) {
+		prepare_food(game, cid);
+		return;
+	} else if (action == game.ai.working) {
+		hunt(game, cid);
+		return;
+	}
+	game.data.character_set_action_timer(cid, 0);
+}
+
+}
+
+}
 
 game_state game {};
 int main(int argc, char const* argv[]) {
@@ -165,9 +300,14 @@ int main(int argc, char const* argv[]) {
 	game.data.character_resize_price_belief_buy(256);
 	game.data.character_resize_price_belief_sell(256);
 	game.data.character_resize_inventory(256);
-	game.data.character_resize_desire(256);
 	game.data.ai_model_resize_stockpile_target(256);
 	game.data.delayed_transaction_resize_balance(256);
+
+	game.ai.getting_food = game.data.create_activity();
+	game.ai.shopping = game.data.create_activity();
+	game.ai.weapon_repair = game.data.create_activity();
+	game.ai.working = game.data.create_activity();
+	game.ai.prepare_food = game.data.create_activity();
 
 	game.coins = game.data.create_commodity();
 	game.potion_material = game.data.create_commodity();
@@ -185,9 +325,11 @@ int main(int argc, char const* argv[]) {
 	auto human = game.data.create_kind();
 	auto rat = game.data.create_kind();
 
-	auto hunter_model = game.data.create_ai_model();
-	game.data.ai_model_set_stockpile_target(hunter_model, game.potion, 7);
-	game.data.ai_model_set_stockpile_target(hunter_model, game.prepared_food, 3);
+	{
+		game.personality.hunter = game.data.create_ai_model();
+		game.data.ai_model_set_stockpile_target(game.personality.hunter, game.potion, 7);
+		game.data.ai_model_set_stockpile_target(game.personality.hunter, game.prepared_food, 3);
+	}
 
 
 	auto shopkeeper_model = game.data.create_ai_model();
@@ -201,6 +343,7 @@ int main(int argc, char const* argv[]) {
 	auto innkeeper_model = game.data.create_ai_model();
 	game.data.ai_model_set_stockpile_target(innkeeper_model, game.raw_food, 10);
 	game.data.ai_model_set_stockpile_target(innkeeper_model, game.prepared_food, 5);
+	game.data.ai_model_set_stockpile_target(innkeeper_model, game.potion, 1);
 
 
 	auto alchemist_model = game.data.create_ai_model();
@@ -210,38 +353,29 @@ int main(int argc, char const* argv[]) {
 
 	auto weapon_master_model = game.data.create_ai_model();
 	game.data.ai_model_set_stockpile_target(weapon_master_model, game.prepared_food, 5);
+	game.data.ai_model_set_stockpile_target(weapon_master_model, game.potion, 1);
 
 
 	auto herbalist_model = game.data.create_ai_model();
 	game.data.ai_model_set_stockpile_target(herbalist_model, game.prepared_food, 5);
+	game.data.ai_model_set_stockpile_target(herbalist_model, game.potion, 1);
 
 
-	{
+	auto deliverer_model = game.data.create_ai_model();
+	game.data.ai_model_set_stockpile_target(deliverer_model, game.prepared_food, 5);
+	game.data.ai_model_set_stockpile_target(deliverer_model, game.potion, 1);
+
+
+	// {
+	// 	auto deliverer = game.data.create_character();
+	// 	game.data.character_set_hp(deliverer, 100);
+	// 	game.data.character_set_hp_max(deliverer, 100);
+	// }
+	for (int i = 0; i < 4; i++) {
 		auto hunter = game.data.create_character();
 		game.data.character_set_hp(hunter, 100);
 		game.data.character_set_hp_max(hunter, 100);
-		game.data.character_set_ai_type(hunter, hunter_model);
-		game.data.character_set_weapon_quality(hunter, 1.f);
-	}
-	{
-		auto hunter = game.data.create_character();
-		game.data.character_set_hp(hunter, 100);
-		game.data.character_set_hp_max(hunter, 100);
-		game.data.character_set_ai_type(hunter, hunter_model);
-		game.data.character_set_weapon_quality(hunter, 1.f);
-	}
-	{
-		auto hunter = game.data.create_character();
-		game.data.character_set_hp(hunter, 100);
-		game.data.character_set_hp_max(hunter, 100);
-		game.data.character_set_ai_type(hunter, hunter_model);
-		game.data.character_set_weapon_quality(hunter, 1.f);
-	}
-	{
-		auto hunter = game.data.create_character();
-		game.data.character_set_hp(hunter, 100);
-		game.data.character_set_hp_max(hunter, 100);
-		game.data.character_set_ai_type(hunter, hunter_model);
+		game.data.character_set_ai_type(hunter, game.personality.hunter);
 		game.data.character_set_weapon_quality(hunter, 1.f);
 	}
 
@@ -305,22 +439,20 @@ int main(int argc, char const* argv[]) {
 		});
 
 		// select initial favorite shops
-		game.data.for_each_character([&](auto candidate){
+		game.data.for_each_building([&](auto candidate_building){
+			auto candidate = game.data.building_get_owner_from_ownership(candidate_building);
 			dcon::ai_model_id model = game.data.character_get_ai_type(candidate);
 			if (model == innkeeper_model) {
-				game.data.character_set_favourite_inn(cid, candidate);
+				game.data.character_set_favourite_inn(cid, candidate_building);
 			}
 			if (model == weapon_master_model) {
-				game.data.character_set_favourite_shop_weapons(cid, candidate);
+				game.data.character_set_favourite_shop_weapons(cid, candidate_building);
 			}
 			if (model == shopkeeper_model) {
-				game.data.character_set_favourite_shop(cid, candidate);
+				game.data.character_set_favourite_shop(cid, candidate_building);
 			}
 		});
 	});
-
-
-	game.weapon_repair = game.data.create_activity();
 
 	FILE* file_handle;
 	file_handle = fopen("statistics/market_activity.txt", "w");
@@ -334,35 +466,11 @@ int main(int argc, char const* argv[]) {
 		fprintf(file_handle, "%d,%f\n", market_activity, total_debt);
 		// market_activity = 0;
 
+		// AI update
 		game.data.for_each_character([&](auto cid) {
 			auto model = game.data.character_get_ai_type(cid);
-			if (model == hunter_model) {
-
-				auto favourite_shop = game.data.character_get_favourite_shop_weapons(cid);
-
-				auto weapon_repair_price = game.data.character_get_price_belief_sell(favourite_shop, game.weapon_service);
-				auto coins = game.data.character_get_inventory(cid, game.coins);
-				if (
-					game.data.character_get_weapon_quality(cid) < 1.5f
-					&& weapon_repair_price * 3.f < coins
-					&& !game.data.character_get_action_type(cid)
-				) {
-					game.data.character_set_action_type(cid, game.weapon_repair);
-					transaction(game, cid, favourite_shop, game.coins, weapon_repair_price);
-					game.data.character_set_price_belief_sell(favourite_shop, game.weapon_service, weapon_repair_price * 1.05f);
-					printf("I will repair weapons\n");
-				}
-
-				if (
-					game.data.character_get_desire(cid, game.prepared_food) > 200
-					&& game.data.character_get_inventory(cid, game.raw_food) >= 1.f
-				) {
-					prepare_food(game, cid);
-				} else if (game.data.character_get_action_type(cid) == game.weapon_repair) {
-					repair_weapon(game, cid);
-				} else {
-					hunt(game, cid);
-				}
+			if (model == game.personality.hunter) {
+				ai::update_activity::hunter(game, cid);
 			} else if (model == alchemist_model) {
 				auto potion_price = game.data.character_get_price_belief_sell(cid, game.potion);
 				auto potion_material_cost = game.data.character_get_price_belief_buy(cid, game.potion_material);
@@ -372,18 +480,25 @@ int main(int argc, char const* argv[]) {
 				) {
 					make_potion(game, cid);
 				}
+
+				auto timer = game.data.character_get_action_timer(cid);
+				game.data.character_set_action_timer(cid, timer + 1);
 			} else if (model == herbalist_model) {
 				gather_potion_material(game, cid);
+
+				auto timer = game.data.character_get_action_timer(cid);
+				game.data.character_set_action_timer(cid, timer + 1);
 			} else if (model == innkeeper_model) {
 				if (game.data.character_get_inventory(cid, game.raw_food) >= 1.f) {
 					printf("make food\n");
 					prepare_food(game, cid);
 				}
+
+				auto timer = game.data.character_get_action_timer(cid);
+				game.data.character_set_action_timer(cid, timer + 1);
 			}
-			auto timer = game.data.character_get_action_timer(cid);
-			game.data.character_set_action_timer(cid, timer + 1);
-			auto hunger = game.data.character_get_desire(cid, game.prepared_food);
-			game.data.character_set_desire(cid, game.prepared_food, hunger + 1);
+			auto hunger = game.data.character_get_hunger(cid);
+			game.data.character_set_hunger(cid, hunger + 1);
 		});
 
 		// trade:
@@ -400,14 +515,15 @@ int main(int argc, char const* argv[]) {
 						return;
 					}
 
-					auto shop_owner = game.data.character_get_favourite_shop(cid);
+					auto shop = game.data.character_get_favourite_shop(cid);
+					auto shop_owner = game.data.building_get_owner_from_ownership(shop);
 					if (commodity == game.prepared_food) {
 						auto shop_owner = game.data.character_get_favourite_inn(cid);
 					}
 					if (cid == shop_owner) {
 						return;
 					}
-					// auto desire = game.data.character_get_desire(cid, commodity);
+					// auto desire = game.data.character_get_hunger(cid, commodity);
 					auto ai = game.data.character_get_ai_type(cid);
 					auto target = game.data.ai_model_get_stockpile_target(ai, commodity);
 					auto inventory = game.data.character_get_inventory(cid, commodity);
@@ -492,7 +608,7 @@ int main(int argc, char const* argv[]) {
 		});
 
 		game.data.for_each_character([&](auto cid) {
-			if (game.data.character_get_desire(cid, game.prepared_food) > 50.f) {
+			if (game.data.character_get_hunger(cid) > 50.f) {
 				eat(game, cid);
 			}
 			drink_potion(game, cid);
@@ -553,10 +669,10 @@ int main(int argc, char const* argv[]) {
 
 		game.data.for_each_character([&](auto cid) {
 			dcon::character_fat_id fcid = dcon::fatten(game.data, cid);
-			printf("%d,(%d) weapon: %f, coins: %f, hunger: %f\n",
-				cid.index(), fcid.get_action_type().id.index(),
+			printf("%d,(%d),(%d) weapon: %f, coins: %f, hunger: %f\n",
+				cid.index(), fcid.get_ai_type().id.index(), fcid.get_action_type().id.index(),
 				fcid.get_weapon_quality(), fcid.get_inventory(game.coins),
-				fcid.get_desire(game.prepared_food)
+				fcid.get_hunger()
 			);
 		});
 
