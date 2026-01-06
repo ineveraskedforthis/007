@@ -115,7 +115,7 @@ void make_potion(game_state& game, dcon::character_id cid) {
 	auto material = game.data.character_get_inventory(cid, game.potion_material);
 	assert(material >= 1.f);
 	auto timer = game.data.character_get_action_timer(cid);
-	if (timer > 10) {
+	if (timer > 6) {
 		auto potion = game.data.character_get_inventory(cid, game.potion);
 		game.data.character_set_inventory(cid, game.potion_material, material - 1.f);
 		game.data.character_set_inventory(cid, game.potion, potion + 1.f);
@@ -458,7 +458,7 @@ int main(int argc, char const* argv[]) {
 	file_handle = fopen("statistics/market_activity.txt", "w");
 
 	fprintf(file_handle, "activity,debt\n");
-	for (int tick = 0; tick < 10000; tick++) {
+	for (int tick = 0; tick < 1000; tick++) {
 		auto total_debt = 0.f;
 		game.data.for_each_delayed_transaction([&](auto transaction) {
 			total_debt += std::abs(game.data.delayed_transaction_get_balance(transaction, game.coins));
@@ -536,6 +536,7 @@ int main(int argc, char const* argv[]) {
 					auto price_shop_buy = game.data.character_get_price_belief_buy(shop_owner, commodity);
 
 
+
 					if (target > inventory) {
 						printf("I need this? %d %f %f %f\n", commodity.index(), desired_price_buy, price_shop_sell, in_stock );
 						if (desired_price_buy >= price_shop_sell && in_stock >= 1.f && coins >= price_shop_sell) {
@@ -579,6 +580,19 @@ int main(int argc, char const* argv[]) {
 							transaction(game, cid, shop_owner, commodity, 1.f);
 							delayed_transaction(game, shop_owner, cid, game.coins, price_shop_buy);
 						}
+					}
+
+
+					// convergence of beliefs during interaction:
+
+					auto alpha = 0.01f;
+					{
+						auto shift = price_shop_sell - desired_price_buy;
+						game.data.character_set_price_belief_buy(cid, commodity, desired_price_buy + shift * alpha);
+					}
+					{
+						auto shift = price_shop_buy - desired_price_sell;
+						game.data.character_set_price_belief_sell(cid, commodity, desired_price_sell + shift * alpha);
 					}
 				});
 			});
@@ -692,6 +706,12 @@ int main(int argc, char const* argv[]) {
 		game.data.for_each_character([&](auto cid) {
 			dcon::character_fat_id fcid = dcon::fatten(game.data, cid);
 			printf("%f %f %f\n", fcid.get_inventory(game.potion), fcid.get_price_belief_buy(game.potion), fcid.get_price_belief_sell(game.potion));
+		});
+
+		printf("POTION MATERIAL:\n");
+		game.data.for_each_character([&](auto cid) {
+			dcon::character_fat_id fcid = dcon::fatten(game.data, cid);
+			printf("%f %f %f\n", fcid.get_inventory(game.potion_material), fcid.get_price_belief_buy(game.potion_material), fcid.get_price_belief_sell(game.potion_material));
 		});
 
 		printf("WEAPON:\n");
