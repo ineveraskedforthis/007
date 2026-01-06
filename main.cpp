@@ -78,7 +78,7 @@ void delayed_transaction(game_state& game, dcon::character_id A, dcon::character
 
 void hunt(game_state& game, dcon::character_id cid) {
 	auto timer = game.data.character_get_action_timer(cid);
-	if (timer > 4) {
+	if (timer > 8) {
 		auto weapon = game.data.character_get_weapon_quality(cid);
 		auto bonus = int(weapon / 0.2);
 		auto food = game.data.character_get_inventory(cid, game.raw_food);
@@ -88,7 +88,7 @@ void hunt(game_state& game, dcon::character_id cid) {
 	} else {
 		game.data.character_set_action_timer(cid, timer + 1);
 	}
-	game.data.character_set_hp(cid, game.data.character_get_hp(cid) - 1);
+	game.data.character_set_hp(cid, game.data.character_get_hp(cid) - 2);
 	auto quality = game.data.character_get_weapon_quality(cid);
 	game.data.character_set_weapon_quality(cid, quality * 0.99f);
 }
@@ -97,12 +97,14 @@ void repair_weapon(game_state& game, dcon::character_id cid, dcon::character_id 
 	auto timer = game.data.character_get_action_timer(cid);
 	auto weapon_repair_price = game.data.character_get_price_belief_sell(master, game.weapon_service);
 	if (timer == 0) {
+		printf("start repair");
 		game.data.character_set_action_timer(cid, timer + 1);
 		transaction(game, cid, master, game.coins, weapon_repair_price);
 		game.data.character_set_price_belief_sell(master, game.weapon_service, weapon_repair_price * 1.05f);
 	} else if (timer > 4) {
+		printf("complete repair");
 		auto quality = game.data.character_get_weapon_quality(cid);
-		game.data.character_set_weapon_quality(cid, quality + 0.1f);
+		game.data.character_set_weapon_quality(cid, quality + 0.3f);
 		game.data.character_set_action_timer(cid, 0.f);
 		game.data.character_set_action_type(cid, {});
 		game.data.delete_guest(game.data.character_get_guest(cid));
@@ -133,7 +135,7 @@ void prepare_food(game_state& game, dcon::character_id cid) {
 	if (timer > 1) {
 		auto result = game.data.character_get_inventory(cid, game.prepared_food);
 		// auto skill = game.data.character_get_skills(cid, )
-		auto skill_bonus = (float)(int)(game.data.character_get_skills(cid, game.skills.cooking) / 0.1);
+		auto skill_bonus = (float)(int)(game.data.character_get_skills(cid, game.skills.cooking) / 0.3);
 		game.data.character_set_inventory(cid, game.raw_food, material - 1.f);
 		game.data.character_set_inventory(cid, game.prepared_food, result + 1.f + skill_bonus);
 		game.data.character_set_action_timer(cid, 0);
@@ -160,7 +162,7 @@ void eat(game_state& game, dcon::character_id cid) {
 	auto hunger = game.data.character_get_hunger(cid);
 	if (food >= 1.f) {
 		game.data.character_set_inventory(cid, game.prepared_food, food - 1);
-		game.data.character_set_hunger(cid, hunger - 50);
+		game.data.character_set_hunger(cid, hunger - 20);
 
 		auto hp = game.data.character_get_hp(cid);
 		game.data.character_set_hp(cid, hp + 5);
@@ -174,7 +176,7 @@ void drink_potion(game_state& game, dcon::character_id cid) {
 
 	if (hp * 2 < hp_max && potions >= 1.f) {
 		game.data.character_set_inventory(cid, game.potion, potions - 1);
-		game.data.character_set_hp(cid, hp + 20);
+		game.data.character_set_hp(cid, hp + 10);
 	}
 }
 
@@ -243,10 +245,11 @@ void hunter(game_state& game, dcon::character_id cid) {
 	}
 
 	auto guest_in = game.data.character_get_guest_location_from_guest(cid);
+	auto timer = game.data.character_get_action_timer(cid);
 
 	if (action == game.ai.weapon_repair) {
 		if (
-			ai::triggers::desire_weapon_repair(game, cid, favourite_weapons_shop_owner)
+			ai::triggers::desire_weapon_repair(game, cid, favourite_weapons_shop_owner) || timer > 0
 		) {
 			auto target_x = game.data.building_get_tile_x(favourite_weapons_shop);
 			auto target_y = game.data.building_get_tile_y(favourite_weapons_shop);
@@ -254,6 +257,8 @@ void hunter(game_state& game, dcon::character_id cid) {
 			auto dx = (float) target_x - x;
 			auto dy = (float) target_y - y;
 			auto distance = abs(dx) + abs(dy);
+
+			auto timer = game.data.character_get_action_timer(cid);
 
 			if (guest_in == favourite_weapons_shop) {
 				repair_weapon(game, cid, favourite_weapons_shop_owner);
@@ -427,7 +432,7 @@ int main(int argc, char const* argv[]) {
 		game.data.character_set_ai_type(alchemist, alchemist_model);
 	}
 
-	{
+	for (int i = 0; i < 2; i++) {
 		auto herbalist = game.data.create_character();
 		game.data.character_set_ai_type(herbalist, herbalist_model);
 	}
@@ -458,7 +463,7 @@ int main(int argc, char const* argv[]) {
 	file_handle = fopen("statistics/market_activity.txt", "w");
 
 	fprintf(file_handle, "activity,debt\n");
-	for (int tick = 0; tick < 1000; tick++) {
+	for (int tick = 0; tick < 60; tick++) {
 		auto total_debt = 0.f;
 		game.data.for_each_delayed_transaction([&](auto transaction) {
 			total_debt += std::abs(game.data.delayed_transaction_get_balance(transaction, game.coins));
@@ -516,10 +521,10 @@ int main(int argc, char const* argv[]) {
 					}
 
 					auto shop = game.data.character_get_favourite_shop(cid);
-					auto shop_owner = game.data.building_get_owner_from_ownership(shop);
 					if (commodity == game.prepared_food) {
-						auto shop_owner = game.data.character_get_favourite_inn(cid);
+						shop = game.data.character_get_favourite_inn(cid);
 					}
+					auto shop_owner = game.data.building_get_owner_from_ownership(shop);
 					if (cid == shop_owner) {
 						return;
 					}
@@ -634,10 +639,13 @@ int main(int argc, char const* argv[]) {
 			game.data.for_each_character([&](auto cid) {
 				if (game.data.character_get_ai_type(cid) == weapon_master_model) {
 					auto cost = game.data.character_get_price_belief_sell(cid, game.weapon_service);
-					game.data.character_set_price_belief_sell(cid, game.weapon_service, cost * 0.99f);
+					game.data.character_set_price_belief_sell(cid, game.weapon_service, cost * 0.9f);
 				}
 				game.data.for_each_commodity([&](auto commodity) {
 					if (commodity == game.coins) {
+						return;
+					}
+					if (commodity == game.weapon_service) {
 						return;
 					}
 
@@ -645,36 +653,47 @@ int main(int argc, char const* argv[]) {
 					auto ai = game.data.character_get_ai_type(cid);
 					auto target = game.data.ai_model_get_stockpile_target(ai, commodity);
 
+					auto spoilage = (float)(int)(inventory / 20);
+
 					if (inventory > target * 2) {
+						auto price_decay_sell = exp(-inventory / target * 0.5f);
+						auto price_decay_buy =exp(-inventory / target);
+
 						auto price_shop_sell = game.data.character_get_price_belief_sell(cid, commodity);
-						game.data.character_set_price_belief_sell(cid, commodity, 0.00001f + price_shop_sell * 0.99f);
+						game.data.character_set_price_belief_sell(cid, commodity, std::max(0.00001f,  price_shop_sell * price_decay_sell));
 
 						auto price_shop_buy = game.data.character_get_price_belief_buy(cid, commodity);
-						game.data.character_set_price_belief_buy(cid, commodity, 0.00001f + price_shop_buy * 0.95f);
+						game.data.character_set_price_belief_buy(cid, commodity, std::max(0.00001f, price_shop_buy * price_decay_buy));
 					}
+
 					// if something is spoiling, we want to get rid of it
-					if (inventory >= 20) {
+					if (spoilage > 0) {
+						auto price_decay_sell = exp(-spoilage * 0.5f);
+						auto price_decay_buy =exp(-spoilage);
 						// spoilage
 						game.data.character_set_inventory(cid, commodity, inventory - (float)(int)(inventory / 20));
 
 						auto price_shop_sell = game.data.character_get_price_belief_sell(cid, commodity);
-						game.data.character_set_price_belief_sell(cid, commodity, 0.00001f + price_shop_sell * 0.99f);
+						game.data.character_set_price_belief_sell(cid, commodity, 0.00001f + price_shop_sell * price_decay_sell);
 
 						auto price_shop_buy = game.data.character_get_price_belief_buy(cid, commodity);
-						game.data.character_set_price_belief_buy(cid, commodity, 0.00001f + price_shop_buy * 0.95f);
+						game.data.character_set_price_belief_buy(cid, commodity, 0.00001f + price_shop_buy * price_decay_buy);
 					}
 
 					auto coins = game.data.character_get_inventory(cid, game.coins);
 
 					if (inventory < target) {
+						auto lack = (float)(target - inventory) / (float)target;
+						auto mult_buy = exp(lack / 10.f);
+
 						auto price_shop_buy = game.data.character_get_price_belief_buy(cid, commodity);
-						game.data.character_set_price_belief_buy(cid, commodity, std::min(coins + 10.f,  price_shop_buy * 1.01f));
+						game.data.character_set_price_belief_buy(cid, commodity, std::min(coins + 10.f,  price_shop_buy * mult_buy));
 						auto price_shop_sell = game.data.character_get_price_belief_sell(cid, commodity);
 
 						if (game.data.character_get_ai_type(cid) == shopkeeper_model) {
-							game.data.character_set_price_belief_sell(cid, commodity,  price_shop_buy * 1.1f);
+							game.data.character_set_price_belief_sell(cid, commodity,  price_shop_buy * mult_buy);
 						} else {
-							game.data.character_set_price_belief_sell(cid, commodity, std::min(coins + 10.f,  price_shop_sell * 1.05f));
+							game.data.character_set_price_belief_sell(cid, commodity, std::min(coins + 10.f,  price_shop_sell * mult_buy));
 						}
 					}
 				});
